@@ -10,8 +10,8 @@ const io = new Server(server, {
     cors: { origin: "*" }
 });
 
-// Username default (bisa diganti langsung lewat URL ?username=nama_akun)
-let targetUsername = process.env.TIKTOK_USERNAME || 'legegdevillain';
+// Sudah diatur otomatis ke akun @coklatkeju_93
+let targetUsername = process.env.TIKTOK_USERNAME || 'coklatkeju_93';
 
 app.use(express.static(path.join(__dirname, 'public')));
 
@@ -52,14 +52,14 @@ function connectToTikTok(username) {
         io.emit('status', { connected: true, username: targetUsername, message: `Terhubung ke @${targetUsername}` });
     }).catch(err => {
         isConnected = false;
-        console.log(`[BELUM LIVE] @${targetUsername} belum live atau gagal terhubung. Coba lagi dalam 20 detik...`);
+        console.log(`[BELUM LIVE] @${targetUsername} belum live. Coba lagi dalam 20 detik...`);
         io.emit('status', {
             connected: false,
             username: targetUsername,
-            message: `Menunggu @${targetUsername} mulai LIVE... (Cek ulang otomatis)`
+            message: `Menunggu @${targetUsername} mulai LIVE... (Cek otomatis)`
         });
 
-        // Coba hubungkan ulang otomatis setiap 20 detik
+        // Otomatis coba hubungkan ulang setiap 20 detik sampai akun mulai LIVE
         reconnectTimer = setTimeout(() => connectToTikTok(targetUsername), 20000);
     });
 
@@ -83,7 +83,7 @@ function connectToTikTok(username) {
         });
     });
 
-    // Event saat penonton Follow atau Share
+    // Event saat penonton Follow
     tiktokConnection.on('social', data => {
         if (data.displayType && data.displayType.includes('follow')) {
             io.emit('follow', {
@@ -115,14 +115,12 @@ function connectToTikTok(username) {
 }
 
 io.on('connection', (socket) => {
-    // Kirim status saat ini ke browser yang baru membuka halaman
     socket.emit('status', {
         connected: isConnected,
         username: targetUsername,
         message: isConnected ? `Terhubung ke @${targetUsername}` : `Menunggu @${targetUsername} LIVE...`
     });
 
-    // Jika browser meminta ganti username dari URL atau pengaturan
     socket.on('setUsername', (uname) => {
         if (!uname) return;
         const clean = uname.replace(/^@/, '').trim().toLowerCase();
@@ -134,6 +132,6 @@ io.on('connection', (socket) => {
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
-    console.log(`Server berjalan di port ${PORT}`);
+    console.log(`Server berjalan di port ${PORT} untuk akun @${targetUsername}`);
     connectToTikTok(targetUsername);
 });
