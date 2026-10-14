@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>TikTok Live Interactive Chat Overlay</title>
+    <title>TikTok Live Overlay - @coklatkeju_93</title>
     <script src="/socket.io/socket.io.js"></script>
     <style>
         * {
@@ -277,8 +277,8 @@
         <strong>⚙️ Pengaturan Overlay TikTok Live</strong>
         <div id="conn-status" class="status-badge">Menghubungkan ke server...</div>
 
-        <label>Username TikTok (tanpa @):</label>
-        <input type="text" id="tiktok-username" placeholder="contoh: legegdevillain">
+        <label>Username TikTok:</label>
+        <input type="text" id="tiktok-username" value="coklatkeju_93">
 
         <label>Pilih Mode Tema Efek:</label>
         <select id="theme-select">
@@ -290,13 +290,13 @@
             <option value="mobil">🚗 Mode Mobil (Melintas di Jalan)</option>
         </select>
 
-        <button id="btn-connect" style="background:#06d6a0; color:#000;">🔗 Hubungkan & Copy Link OBS</button>
+        <button id="btn-connect" style="background:#06d6a0; color:#000;">🔗 Buat & Copy Link OBS</button>
         <input type="text" id="obs-url-output" readonly placeholder="Link OBS akan muncul di sini..." style="background:#111; color:#06d6a0; font-size:11px;">
 
         <hr style="border-color: rgba(255,255,255,0.12); margin: 4px 0;">
         <strong>🧪 Tes Simulasi (Tanpa Harus Live)</strong>
         <div style="display:flex; gap:4px;">
-            <input type="text" id="test-name" placeholder="Nama" value="kilala" style="width:95px;">
+            <input type="text" id="test-name" placeholder="Nama" value="coklatkeju" style="width:95px;">
             <input type="text" id="test-msg" placeholder="Pesan / ketik: lompat" value="lompat" style="flex:1;">
         </div>
         <div style="display:flex; gap:6px;">
@@ -312,7 +312,6 @@
         const topLikesList = document.getElementById('top-likes-list');
         const connStatus = document.getElementById('conn-status');
 
-        // Daftar 6 Tema sesuai video
         const THEMES = {
             kucing: {
                 banner: '💬 Chat → dapat dus • Follow → jadi anak kucing!',
@@ -349,20 +348,17 @@
         const params = new URLSearchParams(window.location.search);
         let currentTheme = params.get('theme') || 'kucing';
 
-        // Sembunyikan panel kontrol jika dibuka di OBS (?hud=0)
+        // Sembunyikan kotak pengaturan jika dipakai di OBS (?hud=0)
         if (params.get('hud') === '0') {
             document.getElementById('demo-controls').style.display = 'none';
         }
-        // Sembunyikan juga papan kiri jika ditambah ?clean=1
+        // Sembunyikan papan Top Like kiri jika ditambah ?clean=1
         if (params.get('clean') === '1') {
             document.getElementById('hud-left').style.display = 'none';
         }
 
-        const urlUsername = params.get('username');
-        if (urlUsername) {
-            document.getElementById('tiktok-username').value = urlUsername;
-            socket.emit('setUsername', urlUsername);
-        }
+        const urlUsername = params.get('username') || 'coklatkeju_93';
+        document.getElementById('tiktok-username').value = urlUsername;
 
         const viewers = new Map();
 
@@ -389,7 +385,6 @@
                 return existing;
             }
 
-            // Batasi maksimal 60 objek di layar agar OBS tetap ringan
             if (viewers.size >= 60) {
                 const oldestKey = viewers.keys().next().value;
                 const oldest = viewers.get(oldestKey);
@@ -451,7 +446,6 @@
             viewer.bubbleEl.textContent = message;
             viewer.bubbleEl.classList.add('show');
 
-            // Interaksi ketik "lompat"
             if (message.toLowerCase().includes('lompat')) {
                 viewer.vy = -15;
             } else if (THEMES[currentTheme].mode === 'bounce') {
@@ -475,7 +469,6 @@
             ).join('');
         }
 
-        // Loop Animasi Pergerakan Karakter (60 FPS)
         function animate() {
             const mode = THEMES[currentTheme].mode;
             const width = window.innerWidth;
@@ -484,7 +477,6 @@
 
             viewers.forEach(v => {
                 if (mode === 'walk') {
-                    // Mode Kucing: berjalan di dasar layar + bisa lompat
                     v.x += v.vx * 0.7;
                     v.y += v.vy;
                     v.vy += 0.6;
@@ -494,7 +486,6 @@
                     }
                     if (v.x < 60 || v.x > width - 60) v.vx *= -1;
                 } else if (mode === 'bounce') {
-                    // Mode Buah & Menu Kafe: memantul di bagian bawah
                     v.x += v.vx * 0.8;
                     v.y += v.vy;
                     v.vy += 0.45;
@@ -504,18 +495,15 @@
                     }
                     if (v.x < 60 || v.x > width - 60) v.vx *= -1;
                 } else if (mode === 'swim') {
-                    // Mode Ikan: berenang bebas di area bawah-tengah
                     v.x += v.vx;
                     v.y += Math.sin(Date.now() / 500 + v.x) * 0.5;
                     if (v.x < 60 || v.x > width - 60) v.vx *= -1;
                 } else if (mode === 'climb') {
-                    // Mode Serangga: merayap ke segala arah di layar
                     v.x += v.vx * 0.8;
                     v.y += v.vy * 0.8;
                     if (v.x < 60 || v.x > width - 60) v.vx *= -1;
                     if (v.y < 140 || v.y > groundY) v.vy *= -1;
                 } else if (mode === 'drive') {
-                    // Mode Mobil: melintas di jalan bawah
                     v.y = groundY - 20;
                     v.x += Math.abs(v.vx) * 2.5;
                     if (v.x > width + 120) v.x = -100;
@@ -535,13 +523,9 @@
         }
         requestAnimationFrame(animate);
 
-        // Event dari Server TikTok Live
         socket.on('status', data => {
             connStatus.textContent = data.message || (data.connected ? `Terhubung ke @${data.username}` : 'Menunggu LIVE...');
             connStatus.className = 'status-badge ' + (data.connected ? 'online' : '');
-            if (data.username && !document.getElementById('tiktok-username').value) {
-                document.getElementById('tiktok-username').value = data.username;
-            }
         });
 
         socket.on('chat', data => {
@@ -554,70 +538,7 @@
             viewer.likes += (data.likeCount || 1);
             viewer.likesEl.textContent = `🤍 ${viewer.likes.toLocaleString()}`;
 
-            // Evolusi karakter berdasarkan jumlah Like (seperti di video)
             if (currentTheme === 'ikan' && viewer.likes >= 4000) {
                 viewer.spriteEl.textContent = '🐋';
                 viewer.spriteEl.style.fontSize = '96px';
-            } else if (currentTheme === 'kucing' && viewer.likes >= 500) {
-                viewer.spriteEl.textContent = '🐅';
-                viewer.spriteEl.style.fontSize = '72px';
-            }
-            updateLeaderboard();
-        });
-
-        socket.on('follow', data => {
-            const viewer = getOrCreateViewer(data.uniqueId, data.nickname);
-            if (currentTheme === 'kucing') {
-                viewer.spriteEl.textContent = '🐱';
-            }
-            showChatBubble(viewer, 'Baru saja Follow! 🎉');
-        });
-
-        // Event Tombol Panel Kontrol
-        document.getElementById('theme-select').addEventListener('change', (e) => {
-            applyTheme(e.target.value);
-        });
-
-        document.getElementById('btn-connect').addEventListener('click', () => {
-            const uname = document.getElementById('tiktok-username').value.trim().replace(/^@/, '');
-            const selectedTheme = document.getElementById('theme-select').value;
-            if (!uname) {
-                alert('Masukkan username TikTok terlebih dahulu!');
-                return;
-            }
-            socket.emit('setUsername', uname);
-
-            const obsUrl = `${window.location.origin}/?username=${encodeURIComponent(uname)}&theme=${selectedTheme}&hud=0`;
-            const outputInput = document.getElementById('obs-url-output');
-            outputInput.value = obsUrl;
-            outputInput.select();
-            navigator.clipboard.writeText(obsUrl).catch(() => {});
-            alert('Link OBS berhasil disalin!\nTempelkan link tersebut ke Browser Source di OBS / TikTok Live Studio.');
-        });
-
-        document.getElementById('btn-sim-chat').addEventListener('click', () => {
-            const name = document.getElementById('test-name').value || 'kilala';
-            const msg = document.getElementById('test-msg').value || 'halo!';
-            const viewer = getOrCreateViewer(name.toLowerCase(), name);
-            showChatBubble(viewer, msg);
-        });
-
-        document.getElementById('btn-sim-like').addEventListener('click', () => {
-            const name = document.getElementById('test-name').value || 'kilala';
-            const viewer = getOrCreateViewer(name.toLowerCase(), name);
-            viewer.likes += 100;
-            viewer.likesEl.textContent = `🤍 ${viewer.likes.toLocaleString()}`;
-            if (currentTheme === 'ikan' && viewer.likes >= 4000) {
-                viewer.spriteEl.textContent = '🐋';
-                viewer.spriteEl.style.fontSize = '96px';
-            }
-            updateLeaderboard();
-        });
-
-        // Auto-Ping setiap 5 menit agar hosting gratisan Render.com tidak pernah tidur saat OBS menyala
-        setInterval(() => {
-            fetch('/ping').catch(() => {});
-        }, 5 * 60 * 1000);
-    </script>
-</body>
-</html>
+            } else if (
