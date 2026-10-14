@@ -4,13 +4,13 @@ const { Server } = require('socket.io');
 const tiktokLive = require('tiktok-live-connector');
 const path = require('path');
 
-// Mendukung tiktok-live-connector versi 2.x (TikTokLiveConnection) maupun versi 1.x
-const TikTokConnection = tiktokLive.TikTokLiveConnection || tiktokLive.WebcastPushConnection;
-
 const app = express();
 const server = http.createServer(app);
+
+// Pengaturan socket.io yang dioptimalkan untuk cloud hosting agar tidak tersendat
 const io = new Server(server, {
-    cors: { origin: "*" }
+    cors: { origin: "*" },
+    transports: ['polling', 'websocket']
 });
 
 let targetUsername = process.env.TIKTOK_USERNAME || 'coklatkeju_93';
