@@ -10,18 +10,17 @@ const io = new Server(server, {
     cors: { origin: "*" }
 });
 
-// Sudah diatur otomatis ke akun @coklatkeju_93
 let targetUsername = process.env.TIKTOK_USERNAME || 'coklatkeju_93';
 
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Endpoint anti-sleep agar hosting gratisan (Render.com) tidak mati saat OBS aktif
 app.get('/ping', (req, res) => {
     res.status(200).send('OK');
 });
 
 let tiktokConnection = null;
 let isConnected = false;
+let lastStatusMessage = 'Memulai server...';
 let reconnectTimer = null;
 
 function connectToTikTok(username) {
@@ -41,29 +40,40 @@ function connectToTikTok(username) {
         reconnectTimer = null;
     }
 
-    console.log(`[MENGHUBUNGKAN] Mencari TikTok Live: @${targetUsername}...`);
-    io.emit('status', { connected: false, username: targetUsername, message: `Mencari live @${targetUsername}...` });
+    lastStatusMessage = `Mencoba masuk ke live @${targetUsername}...`;
+    console.log(`[MENGHUBUNGKAN] ${lastStatusMessage}`);
+    io.emit('status', { connected: false, username: targetUsername, message: lastStatusMessage });
 
-    tiktokConnection = new WebcastPushConnection(targetUsername);
+    // Opsi penting agar koneksi dari Railway tidak ditolak oleh TikTok
+    tiktokConnection = new WebcastPushConnection(targetUsername, {
+        processInitialData: false,
+        enableExtendedGiftInfo: false,
+        enableWebsocketUpgrade: true,
+        requestPollingIntervalMs: 2000
+    });
 
     tiktokConnection.connect().then(state => {
         isConnected = true;
-        console.log(`[TERHUBUNG] Berhasil masuk ke live @${targetUsername} (Room ID: ${state.roomId})`);
-        io.emit('status', { connected: true, username: targetUsername, message: `Terhubung ke @${targetUsername}` });
+        lastStatusMessage = `Terhubung ke LIVE @${targetUsername} (Room: ${state.roomId})`;
+        console.log(`[TERHUBUNG] ${lastStatusMessage}`);
+        io.emit('status', { connected: true, username: targetUsername, message: lastStatusMessage });
     }).catch(err => {
         isConnected = false;
-        console.log(`[BELUM LIVE] @${targetUsername} belum live. Coba lagi dalam 20 detik...`);
+        const errMsg = err && err.message ? err.message : String(err);
+        lastStatusMessage = `Gagal (@${targetUsername}): ${errMsg}`;
+        console.error(`[ERROR KONEKSI] ${lastStatusMessage}`);
+        
+        // Tampilkan pesan error asli langsung di kotak status halaman web
         io.emit('status', {
             connected: false,
             username: targetUsername,
-            message: `Menunggu @${targetUsername} mulai LIVE... (Cek otomatis)`
+            message: lastStatusMessage
         });
 
-        // Otomatis coba hubungkan ulang setiap 20 detik sampai akun mulai LIVE
-        reconnectTimer = setTimeout(() => connectToTikTok(targetUsername), 20000);
+        // Coba hubungkan ulang otomatis setiap 15 detik
+        reconnectTimer = setTimeout(() => connectToTikTok(targetUsername), 15000);
     });
 
-    // Event saat penonton mengirim komentar / chat
     tiktokConnection.on('chat', data => {
         io.emit('chat', {
             uniqueId: data.uniqueId,
@@ -73,7 +83,6 @@ function connectToTikTok(username) {
         });
     });
 
-    // Event saat penonton tap-tap layar (Like)
     tiktokConnection.on('like', data => {
         io.emit('like', {
             uniqueId: data.uniqueId,
@@ -83,7 +92,6 @@ function connectToTikTok(username) {
         });
     });
 
-    // Event saat penonton Follow
     tiktokConnection.on('social', data => {
         if (data.displayType && data.displayType.includes('follow')) {
             io.emit('follow', {
@@ -93,23 +101,10 @@ function connectToTikTok(username) {
         }
     });
 
-    // Event saat penonton mengirim Gift
-    tiktokConnection.on('gift', data => {
-        if (data.giftType === 1 && !data.repeatEnd) return;
-        io.emit('gift', {
-            uniqueId: data.uniqueId,
-            nickname: data.nickname,
-            giftName: data.giftName,
-            diamondCount: data.diamondCount,
-            repeatCount: data.repeatCount
-        });
-    });
-
-    // Jika live selesai, otomatis tunggu live berikutnya
     tiktokConnection.on('streamEnd', () => {
         isConnected = false;
-        console.log(`[SELESAI] Live @${targetUsername} berakhir.`);
-        io.emit('status', { connected: false, username: targetUsername, message: 'Live berakhir' });
+        lastStatusMessage = `Live @${targetUsername} telah berakhir.`;
+        io.emit('status', { connected: false, username: targetUsername, message: lastStatusMessage });
         reconnectTimer = setTimeout(() => connectToTikTok(targetUsername), 20000);
     });
 }
@@ -118,13 +113,13 @@ io.on('connection', (socket) => {
     socket.emit('status', {
         connected: isConnected,
         username: targetUsername,
-        message: isConnected ? `Terhubung ke @${targetUsername}` : `Menunggu @${targetUsername} LIVE...`
+        message: lastStatusMessage
     });
 
     socket.on('setUsername', (uname) => {
         if (!uname) return;
         const clean = uname.replace(/^@/, '').trim().toLowerCase();
-        if (clean && (clean !== targetUsername || !isConnected)) {
+        if (clean) {
             connectToTikTok(clean);
         }
     });
