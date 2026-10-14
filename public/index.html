@@ -1,0 +1,623 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TikTok Live Interactive Chat Overlay</title>
+    <script src="/socket.io/socket.io.js"></script>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            user-select: none;
+        }
+
+        body {
+            width: 100vw;
+            height: 100vh;
+            overflow: hidden;
+            background: transparent;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        /* Panel Info & Leaderboard Kiri */
+        #hud-left {
+            position: absolute;
+            top: 100px;
+            left: 20px;
+            z-index: 100;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            pointer-events: none;
+        }
+
+        .info-pill {
+            background: rgba(20, 25, 35, 0.82);
+            backdrop-filter: blur(6px);
+            color: #ffffff;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 13px;
+            font-weight: 600;
+            border: 1px solid rgba(255, 255, 255, 0.22);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            width: fit-content;
+        }
+
+        .leaderboard {
+            background: rgba(20, 25, 35, 0.82);
+            backdrop-filter: blur(6px);
+            color: #fff;
+            padding: 12px 14px;
+            border-radius: 14px;
+            width: 220px;
+            border: 1px solid rgba(255, 255, 255, 0.18);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+        }
+
+        .leaderboard h4 {
+            font-size: 13px;
+            margin-bottom: 8px;
+            color: #ffd166;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .leaderboard ul {
+            list-style: none;
+            font-size: 12px;
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+
+        .leaderboard li {
+            display: flex;
+            justify-content: space-between;
+            gap: 8px;
+        }
+
+        .leaderboard .lb-name {
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            max-width: 130px;
+        }
+
+        /* Area Utama Karakter Penonton */
+        #stage {
+            position: relative;
+            width: 100%;
+            height: 100%;
+        }
+
+        /* Wrapper Karakter Penonton */
+        .viewer-entity {
+            position: absolute;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            transform: translate(-50%, -100%);
+            pointer-events: none;
+            will-change: left, top;
+        }
+
+        /* Balon Chat (Speech Bubble) di Atas Karakter */
+        .chat-bubble {
+            position: relative;
+            background: #ffffff;
+            color: #1a1a24;
+            padding: 6px 12px;
+            border-radius: 12px;
+            font-size: 13px;
+            font-weight: 700;
+            max-width: 230px;
+            text-align: center;
+            word-wrap: break-word;
+            margin-bottom: 8px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+            border: 2px solid #2b2d42;
+            opacity: 0;
+            transform: scale(0.7) translateY(10px);
+            transition: all 0.22s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
+
+        .chat-bubble.show {
+            opacity: 1;
+            transform: scale(1) translateY(0);
+        }
+
+        /* Ekor Balon Chat */
+        .chat-bubble::after {
+            content: '';
+            position: absolute;
+            bottom: -7px;
+            left: 50%;
+            transform: translateX(-50%);
+            border-width: 7px 6px 0;
+            border-style: solid;
+            border-color: #ffffff transparent;
+            display: block;
+            width: 0;
+        }
+
+        /* Balon Chat Gelap Khusus Tema Mobil */
+        body.theme-mobil .chat-bubble {
+            background: rgba(18, 18, 24, 0.9);
+            color: #ffffff;
+            border: 1px solid rgba(255, 255, 255, 0.3);
+        }
+        body.theme-mobil .chat-bubble::after {
+            border-color: rgba(18, 18, 24, 0.9) transparent;
+        }
+
+        /* Sprite / Karakter Visual */
+        .avatar-sprite {
+            font-size: 54px;
+            line-height: 1;
+            filter: drop-shadow(0 5px 8px rgba(0, 0, 0, 0.45));
+            transition: transform 0.2s ease, font-size 0.3s ease;
+        }
+
+        .avatar-sprite.flip {
+            transform: scaleX(-1);
+        }
+
+        /* Label Nama & Like di Bawah Karakter */
+        .viewer-label {
+            margin-top: 4px;
+            background: rgba(0, 0, 0, 0.6);
+            color: #ffffff;
+            padding: 2px 9px;
+            border-radius: 10px;
+            font-size: 12px;
+            font-weight: 700;
+            text-shadow: 0 1px 3px rgba(0, 0, 0, 0.9);
+            white-space: nowrap;
+            text-align: center;
+        }
+
+        .viewer-likes {
+            font-size: 11px;
+            color: #ff6b81;
+            font-weight: 700;
+            margin-top: 2px;
+            text-shadow: 0 1px 3px rgba(0, 0, 0, 0.95);
+        }
+
+        /* Panel Pengaturan & Pembuat Link OBS (Otomatis sembunyi jika ?hud=0) */
+        #demo-controls {
+            position: fixed;
+            bottom: 16px;
+            right: 16px;
+            z-index: 999;
+            background: rgba(15, 18, 28, 0.94);
+            color: #fff;
+            padding: 14px;
+            border-radius: 14px;
+            width: 310px;
+            font-size: 12px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+        }
+
+        #demo-controls input,
+        #demo-controls select,
+        #demo-controls button {
+            padding: 7px 10px;
+            border-radius: 7px;
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            font-size: 12px;
+            outline: none;
+        }
+
+        #demo-controls input,
+        #demo-controls select {
+            background: #1e2235;
+            color: #fff;
+        }
+
+        #demo-controls button {
+            background: #ef233c;
+            color: #fff;
+            font-weight: 700;
+            cursor: pointer;
+            border: none;
+            transition: opacity 0.2s;
+        }
+
+        #demo-controls button:hover {
+            opacity: 0.9;
+        }
+
+        .status-badge {
+            font-size: 11px;
+            padding: 5px 8px;
+            border-radius: 6px;
+            background: rgba(255, 255, 255, 0.1);
+            color: #ffd166;
+            text-align: center;
+        }
+
+        .status-badge.online {
+            background: rgba(6, 214, 160, 0.2);
+            color: #06d6a0;
+        }
+    </style>
+</head>
+<body class="theme-kucing">
+
+    <!-- HUD Kiri (Banner Aturan & Top 5 Like) -->
+    <div id="hud-left">
+        <div class="info-pill" id="banner-rule">
+            💬 Chat → dapat dus • Follow → jadi anak kucing!
+        </div>
+        <div class="leaderboard">
+            <h4>🤍 Top 5 Like</h4>
+            <ul id="top-likes-list">
+                <li><span class="lb-name">Belum ada data</span><span>0</span></li>
+            </ul>
+        </div>
+    </div>
+
+    <!-- Area Munculnya Karakter -->
+    <div id="stage"></div>
+
+    <!-- Panel Pengaturan & Pembuat Link OBS -->
+    <div id="demo-controls">
+        <strong>⚙️ Pengaturan Overlay TikTok Live</strong>
+        <div id="conn-status" class="status-badge">Menghubungkan ke server...</div>
+
+        <label>Username TikTok (tanpa @):</label>
+        <input type="text" id="tiktok-username" placeholder="contoh: legegdevillain">
+
+        <label>Pilih Mode Tema Efek:</label>
+        <select id="theme-select">
+            <option value="kucing">🐱 Mode Kucing (Jalan di Bawah)</option>
+            <option value="buah">🍓 Mode Buah (Ketik "lompat" = Lompat)</option>
+            <option value="kafe">🍰 Mode Menu Kafe & Cemilan</option>
+            <option value="ikan">🐟 Mode Ikan (4.000 Like = Paus)</option>
+            <option value="serangga">🐞 Mode Serangga (Merayap di Layar)</option>
+            <option value="mobil">🚗 Mode Mobil (Melintas di Jalan)</option>
+        </select>
+
+        <button id="btn-connect" style="background:#06d6a0; color:#000;">🔗 Hubungkan & Copy Link OBS</button>
+        <input type="text" id="obs-url-output" readonly placeholder="Link OBS akan muncul di sini..." style="background:#111; color:#06d6a0; font-size:11px;">
+
+        <hr style="border-color: rgba(255,255,255,0.12); margin: 4px 0;">
+        <strong>🧪 Tes Simulasi (Tanpa Harus Live)</strong>
+        <div style="display:flex; gap:4px;">
+            <input type="text" id="test-name" placeholder="Nama" value="kilala" style="width:95px;">
+            <input type="text" id="test-msg" placeholder="Pesan / ketik: lompat" value="lompat" style="flex:1;">
+        </div>
+        <div style="display:flex; gap:6px;">
+            <button id="btn-sim-chat" style="flex:1;">Simulasi Chat</button>
+            <button id="btn-sim-like" style="flex:1; background:#3a86ff;">+100 Like</button>
+        </div>
+    </div>
+
+    <script>
+        const socket = io();
+        const stage = document.getElementById('stage');
+        const bannerRule = document.getElementById('banner-rule');
+        const topLikesList = document.getElementById('top-likes-list');
+        const connStatus = document.getElementById('conn-status');
+
+        // Daftar 6 Tema sesuai video
+        const THEMES = {
+            kucing: {
+                banner: '💬 Chat → dapat dus • Follow → jadi anak kucing!',
+                sprites: ['📦', '🐱', '🐈', '🐈‍⬛', '🐅', '🦁'],
+                mode: 'walk'
+            },
+            buah: {
+                banner: '💬 Chat → jadi buah! Ketik "lompat" untuk melompat!',
+                sprites: ['🍓', '🍍', '🍋', '🍇', '🍉', '🍌', '🍎', '🍑'],
+                mode: 'bounce'
+            },
+            kafe: {
+                banner: '💬 Chat apa aja → jadi menu kafe! (100 like = buka makananmu)',
+                sprites: ['🍰', '🧁', '🍔', '🍟', '🧋', '🍩', '🍮', '🥐', '🍨'],
+                mode: 'bounce'
+            },
+            ikan: {
+                banner: '💬 Ketik di chat → jadi ikan! (4.000 Like = Ikan Paus Besar)',
+                sprites: ['🐟', '🐠', '🐡', '🦈', '🐬', '🦑'],
+                mode: 'swim'
+            },
+            serangga: {
+                banner: '💬 Follow + Chat → telur • 100 Like → semut petarung!',
+                sprites: ['🐜', '🐞', '🪲', '🦋', '🐝', '🦗', '🕷️'],
+                mode: 'climb'
+            },
+            mobil: {
+                banner: '💬 Ketik di chat → mobilmu lewat di jalan raya!',
+                sprites: ['🚗', '🏎️', '🚓', '🚕', '🚙', '🚌'],
+                mode: 'drive'
+            }
+        };
+
+        const params = new URLSearchParams(window.location.search);
+        let currentTheme = params.get('theme') || 'kucing';
+
+        // Sembunyikan panel kontrol jika dibuka di OBS (?hud=0)
+        if (params.get('hud') === '0') {
+            document.getElementById('demo-controls').style.display = 'none';
+        }
+        // Sembunyikan juga papan kiri jika ditambah ?clean=1
+        if (params.get('clean') === '1') {
+            document.getElementById('hud-left').style.display = 'none';
+        }
+
+        const urlUsername = params.get('username');
+        if (urlUsername) {
+            document.getElementById('tiktok-username').value = urlUsername;
+            socket.emit('setUsername', urlUsername);
+        }
+
+        const viewers = new Map();
+
+        function applyTheme(themeKey) {
+            if (!THEMES[themeKey]) themeKey = 'kucing';
+            currentTheme = themeKey;
+            document.body.className = `theme-${themeKey}`;
+            bannerRule.textContent = THEMES[themeKey].banner;
+            document.getElementById('theme-select').value = themeKey;
+
+            viewers.forEach(v => {
+                const list = THEMES[currentTheme].sprites;
+                v.spriteEl.textContent = list[Math.floor(Math.random() * list.length)];
+                v.spriteEl.style.fontSize = '54px';
+            });
+        }
+
+        applyTheme(currentTheme);
+
+        function getOrCreateViewer(uniqueId, nickname) {
+            if (viewers.has(uniqueId)) {
+                const existing = viewers.get(uniqueId);
+                if (nickname) existing.labelEl.textContent = nickname;
+                return existing;
+            }
+
+            // Batasi maksimal 60 objek di layar agar OBS tetap ringan
+            if (viewers.size >= 60) {
+                const oldestKey = viewers.keys().next().value;
+                const oldest = viewers.get(oldestKey);
+                if (oldest && oldest.el) oldest.el.remove();
+                viewers.delete(oldestKey);
+            }
+
+            const el = document.createElement('div');
+            el.className = 'viewer-entity';
+
+            const bubbleEl = document.createElement('div');
+            bubbleEl.className = 'chat-bubble';
+
+            const spriteEl = document.createElement('div');
+            spriteEl.className = 'avatar-sprite';
+            const sprites = THEMES[currentTheme].sprites;
+            spriteEl.textContent = sprites[Math.floor(Math.random() * sprites.length)];
+
+            const labelEl = document.createElement('div');
+            labelEl.className = 'viewer-label';
+            labelEl.textContent = nickname || uniqueId;
+
+            const likesEl = document.createElement('div');
+            likesEl.className = 'viewer-likes';
+            likesEl.textContent = '🤍 0';
+
+            el.appendChild(bubbleEl);
+            el.appendChild(spriteEl);
+            el.appendChild(labelEl);
+            el.appendChild(likesEl);
+            stage.appendChild(el);
+
+            const startX = Math.random() * (window.innerWidth - 160) + 80;
+            const startY = (currentTheme === 'ikan' || currentTheme === 'serangga')
+                ? Math.random() * (window.innerHeight * 0.6) + (window.innerHeight * 0.3)
+                : window.innerHeight - 60;
+
+            const viewerObj = {
+                uniqueId,
+                nickname: nickname || uniqueId,
+                el,
+                bubbleEl,
+                spriteEl,
+                labelEl,
+                likesEl,
+                x: startX,
+                y: startY,
+                vx: (Math.random() > 0.5 ? 1 : -1) * (1.2 + Math.random() * 1.5),
+                vy: (Math.random() > 0.5 ? 1 : -1) * (0.8 + Math.random() * 1.0),
+                likes: 0,
+                bubbleTimeout: null
+            };
+
+            viewers.set(uniqueId, viewerObj);
+            return viewerObj;
+        }
+
+        function showChatBubble(viewer, message) {
+            viewer.bubbleEl.textContent = message;
+            viewer.bubbleEl.classList.add('show');
+
+            // Interaksi ketik "lompat"
+            if (message.toLowerCase().includes('lompat')) {
+                viewer.vy = -15;
+            } else if (THEMES[currentTheme].mode === 'bounce') {
+                viewer.vy = -9;
+            }
+
+            if (viewer.bubbleTimeout) clearTimeout(viewer.bubbleTimeout);
+            viewer.bubbleTimeout = setTimeout(() => {
+                viewer.bubbleEl.classList.remove('show');
+            }, 6000);
+        }
+
+        function updateLeaderboard() {
+            const sorted = Array.from(viewers.values())
+                .sort((a, b) => b.likes - a.likes)
+                .slice(0, 5);
+
+            if (sorted.length === 0) return;
+            topLikesList.innerHTML = sorted.map((v, idx) =>
+                `<li><span class="lb-name">${idx + 1}. ${v.nickname}</span><span>🤍 ${v.likes.toLocaleString()}</span></li>`
+            ).join('');
+        }
+
+        // Loop Animasi Pergerakan Karakter (60 FPS)
+        function animate() {
+            const mode = THEMES[currentTheme].mode;
+            const width = window.innerWidth;
+            const height = window.innerHeight;
+            const groundY = height - 45;
+
+            viewers.forEach(v => {
+                if (mode === 'walk') {
+                    // Mode Kucing: berjalan di dasar layar + bisa lompat
+                    v.x += v.vx * 0.7;
+                    v.y += v.vy;
+                    v.vy += 0.6;
+                    if (v.y > groundY) {
+                        v.y = groundY;
+                        v.vy = 0;
+                    }
+                    if (v.x < 60 || v.x > width - 60) v.vx *= -1;
+                } else if (mode === 'bounce') {
+                    // Mode Buah & Menu Kafe: memantul di bagian bawah
+                    v.x += v.vx * 0.8;
+                    v.y += v.vy;
+                    v.vy += 0.45;
+                    if (v.y > groundY) {
+                        v.y = groundY;
+                        v.vy = -(4 + Math.random() * 4);
+                    }
+                    if (v.x < 60 || v.x > width - 60) v.vx *= -1;
+                } else if (mode === 'swim') {
+                    // Mode Ikan: berenang bebas di area bawah-tengah
+                    v.x += v.vx;
+                    v.y += Math.sin(Date.now() / 500 + v.x) * 0.5;
+                    if (v.x < 60 || v.x > width - 60) v.vx *= -1;
+                } else if (mode === 'climb') {
+                    // Mode Serangga: merayap ke segala arah di layar
+                    v.x += v.vx * 0.8;
+                    v.y += v.vy * 0.8;
+                    if (v.x < 60 || v.x > width - 60) v.vx *= -1;
+                    if (v.y < 140 || v.y > groundY) v.vy *= -1;
+                } else if (mode === 'drive') {
+                    // Mode Mobil: melintas di jalan bawah
+                    v.y = groundY - 20;
+                    v.x += Math.abs(v.vx) * 2.5;
+                    if (v.x > width + 120) v.x = -100;
+                }
+
+                if (v.vx > 0) {
+                    v.spriteEl.classList.add('flip');
+                } else {
+                    v.spriteEl.classList.remove('flip');
+                }
+
+                v.el.style.left = `${v.x}px`;
+                v.el.style.top = `${v.y}px`;
+            });
+
+            requestAnimationFrame(animate);
+        }
+        requestAnimationFrame(animate);
+
+        // Event dari Server TikTok Live
+        socket.on('status', data => {
+            connStatus.textContent = data.message || (data.connected ? `Terhubung ke @${data.username}` : 'Menunggu LIVE...');
+            connStatus.className = 'status-badge ' + (data.connected ? 'online' : '');
+            if (data.username && !document.getElementById('tiktok-username').value) {
+                document.getElementById('tiktok-username').value = data.username;
+            }
+        });
+
+        socket.on('chat', data => {
+            const viewer = getOrCreateViewer(data.uniqueId, data.nickname);
+            showChatBubble(viewer, data.comment);
+        });
+
+        socket.on('like', data => {
+            const viewer = getOrCreateViewer(data.uniqueId, data.nickname);
+            viewer.likes += (data.likeCount || 1);
+            viewer.likesEl.textContent = `🤍 ${viewer.likes.toLocaleString()}`;
+
+            // Evolusi karakter berdasarkan jumlah Like (seperti di video)
+            if (currentTheme === 'ikan' && viewer.likes >= 4000) {
+                viewer.spriteEl.textContent = '🐋';
+                viewer.spriteEl.style.fontSize = '96px';
+            } else if (currentTheme === 'kucing' && viewer.likes >= 500) {
+                viewer.spriteEl.textContent = '🐅';
+                viewer.spriteEl.style.fontSize = '72px';
+            }
+            updateLeaderboard();
+        });
+
+        socket.on('follow', data => {
+            const viewer = getOrCreateViewer(data.uniqueId, data.nickname);
+            if (currentTheme === 'kucing') {
+                viewer.spriteEl.textContent = '🐱';
+            }
+            showChatBubble(viewer, 'Baru saja Follow! 🎉');
+        });
+
+        // Event Tombol Panel Kontrol
+        document.getElementById('theme-select').addEventListener('change', (e) => {
+            applyTheme(e.target.value);
+        });
+
+        document.getElementById('btn-connect').addEventListener('click', () => {
+            const uname = document.getElementById('tiktok-username').value.trim().replace(/^@/, '');
+            const selectedTheme = document.getElementById('theme-select').value;
+            if (!uname) {
+                alert('Masukkan username TikTok terlebih dahulu!');
+                return;
+            }
+            socket.emit('setUsername', uname);
+
+            const obsUrl = `${window.location.origin}/?username=${encodeURIComponent(uname)}&theme=${selectedTheme}&hud=0`;
+            const outputInput = document.getElementById('obs-url-output');
+            outputInput.value = obsUrl;
+            outputInput.select();
+            navigator.clipboard.writeText(obsUrl).catch(() => {});
+            alert('Link OBS berhasil disalin!\nTempelkan link tersebut ke Browser Source di OBS / TikTok Live Studio.');
+        });
+
+        document.getElementById('btn-sim-chat').addEventListener('click', () => {
+            const name = document.getElementById('test-name').value || 'kilala';
+            const msg = document.getElementById('test-msg').value || 'halo!';
+            const viewer = getOrCreateViewer(name.toLowerCase(), name);
+            showChatBubble(viewer, msg);
+        });
+
+        document.getElementById('btn-sim-like').addEventListener('click', () => {
+            const name = document.getElementById('test-name').value || 'kilala';
+            const viewer = getOrCreateViewer(name.toLowerCase(), name);
+            viewer.likes += 100;
+            viewer.likesEl.textContent = `🤍 ${viewer.likes.toLocaleString()}`;
+            if (currentTheme === 'ikan' && viewer.likes >= 4000) {
+                viewer.spriteEl.textContent = '🐋';
+                viewer.spriteEl.style.fontSize = '96px';
+            }
+            updateLeaderboard();
+        });
+
+        // Auto-Ping setiap 5 menit agar hosting gratisan Render.com tidak pernah tidur saat OBS menyala
+        setInterval(() => {
+            fetch('/ping').catch(() => {});
+        }, 5 * 60 * 1000);
+    </script>
+</body>
+</html>
