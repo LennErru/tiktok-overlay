@@ -1,7 +1,7 @@
 {
-  "name": "tiktok-live-overlay",
-  "version": "1.0.0",
-  "description": "Overlay Interaktif TikTok Live Realtime",
+  "name": "tiktok-live-overlay-coklatkeju",
+  "version": "1.0.1",
+  "description": "Overlay Interaktif TikTok Live untuk @coklatkeju_93",
   "main": "server.js",
   "scripts": {
     "start": "node server.js"
@@ -9,6 +9,6 @@
   "dependencies": {
     "express": "^4.19.2",
     "socket.io": "^4.7.5",
-    "tiktok-live-connector": "^1.2.1"
+    "tiktok-live-connector": "latest"
   }
 }
